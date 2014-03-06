@@ -65,32 +65,32 @@ module Bitcoin::Storage::Backends
           blk_tx, new_tx, addrs, names = [], [], [], []
 
           # store tx
-          existing_tx = Hash[*@db[:tx].filter(hash: blk.tx.map {|tx| tx.hash.htb.blob }).map { |tx| [tx[:hash].hth, tx[:id]] }.flatten]
+          existing_tx = Hash[*@db[:tx].filter(hash: blk.tx.map {|tx| tx.hash.htb.blob }).map {|tx| [tx[:hash].hth, tx[:id]] }.flatten]
           blk.tx.each.with_index do |tx, idx|
             existing = existing_tx[tx.hash]
             existing ? blk_tx[idx] = existing : new_tx << [tx, idx]
           end
 
-          new_tx_ids = @db[:tx].insert_multiple(new_tx.map {|tx, _| tx_data(tx) })
+          new_tx_ids = new_tx.map {|tx, _| q[:add_tx].call(tx_data(tx)) }
           new_tx_ids.each.with_index {|tx_id, idx| blk_tx[new_tx[idx][1]] = tx_id }
 
-          @db[:blk_tx].insert_multiple(blk_tx.map.with_index {|id, idx|
-            { blk_id: block_id, tx_id: id, idx: idx } })
+          blk_tx.map.with_index {|id, idx| q[:add_blk_tx].call(blk_id: block_id, tx_id: id, idx: idx) }
 
           # store txins
-          txin_ids = @db[:txin].insert_multiple(new_tx.map.with_index {|tx, tx_idx|
+          new_tx.map.with_index do |tx, tx_idx|
             tx, _ = *tx
-            tx.in.map.with_index {|txin, txin_idx|
-              txin_data(new_tx_ids[tx_idx], txin, txin_idx) } }.flatten)
+            tx.in.map.with_index {|txin, txin_idx| q[:add_txin].call(txin_data(new_tx_ids[tx_idx], txin, txin_idx)) }
+          end
 
           # store txouts
           txout_i = 0
-          txout_ids = @db[:txout].insert_multiple(new_tx.map.with_index {|tx, tx_idx|
+          txout_ids = new_tx.map.with_index do |tx, tx_idx|
             tx, _ = *tx
             tx.out.map.with_index {|txout, txout_idx|
               script_type, a, n = *parse_script(txout, txout_i, tx.hash, txout_idx)
               addrs += a; names += n; txout_i += 1
-              txout_data(new_tx_ids[tx_idx], txout, txout_idx, script_type) } }.flatten)
+              q[:add_txout].call(txout_data(new_tx_ids[tx_idx], txout, txout_idx, script_type)) }
+          end.flatten
 
           # store addrs
           persist_addrs addrs.map {|i, h| [txout_ids[i], h]}
@@ -131,6 +131,8 @@ module Bitcoin::Storage::Backends
           new_addrs << [hash160, txouts.map {|id, _| id }]
         end
       end
+      # TODO use prepared statement here too, can't figure out why it causes some tests to fail
+      # new_addr_ids = new_addrs.map {|hash160, txout_id| q[:add_addr].call(hash160: hash160) }
       new_addr_ids = @db[:addr].insert_multiple(new_addrs.map {|hash160, txout_id|
         { hash160: hash160 } })
       new_addr_ids.each.with_index do |addr_id, idx|
@@ -138,8 +140,7 @@ module Bitcoin::Storage::Backends
           addr_txouts << [addr_id, txout_id]
         end
       end
-      @db[:addr_txout].insert_multiple(addr_txouts.map {|addr_id, txout_id|
-        { addr_id: addr_id, txout_id: txout_id }})
+      addr_txouts.map {|addr_id, txout_id| q[:add_addr_txout].call(addr_id: addr_id, txout_id: txout_id) }
     end
 
     # prepare transaction data for storage
@@ -442,6 +443,20 @@ module Bitcoin::Storage::Backends
       #   tx = txout.get_tx
       #   total += txout.value
       # end
+    end
+
+    protected
+
+    # list of database prepared statements
+    def q
+      @prepared_statements ||= {
+        add_tx: db[:tx].prepare(:insert, :add_tx, hash: :$hash, version: :$version, lock_time: :$lock_time, coinbase: :$coinbase, tx_size: :$tx_size ),
+        add_blk_tx: db[:blk_tx].prepare(:insert, :add_blk_tx, blk_id: :$blk_id, tx_id: :$tx_id, idx: :$idx),
+        add_txin: db[:txin].prepare(:insert, :add_txin, tx_id: :$tx_id, tx_idx: :$tx_idx, script_sig: :$script_sig, prev_out: :$prev_out, prev_out_index: :$prev_out_index, sequence: :$sequence),
+        add_txout: db[:txout].prepare(:insert, :add_txout, tx_id: :$tx_id, tx_idx: :$tx_idx, pk_script: :$pk_script, value: :$value, type: :$type),
+        add_addr: db[:addr].prepare(:insert, :add_addr, hash160: :$hash160),
+        add_addr_txout: db[:addr_txout].prepare(:insert, :add_addr_txout, addr_id: :$addr_id, txout_id: :$txout_id)
+      }
     end
 
   end
