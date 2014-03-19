@@ -2,6 +2,7 @@
 
 require_relative '../spec_helper.rb'
 require 'bitcoin/script'
+require 'json'
 
 include Bitcoin
 
@@ -460,6 +461,16 @@ describe 'Bitcoin::Script' do
     # mainnet tx: 340aa9f72206d600b7e89c9137e4d2d77a920723f83e34707ff452121fd48492 redeeming output from f2d72a7bf22e29e3f2dc721afbf0a922860f81db9fc7eb397937f9d7e87cc438
     script = Bitcoin::Script.from_string("027ce87f6f41dd4d7d874b40889f7df6b288f77f OP_DEPTH OP_HASH256 OP_HASH160 OP_SHA256 OP_SHA1 OP_RIPEMD160 OP_EQUAL")
     script.run.should == true
+  end
+
+  describe "bitcoind script tests" do
+
+    JSON.load(fixtures_file("script_valid.json")).each.with_index do |t, i|
+      it "should validate script no.#{i} #{t[2]} from scripts_valid.json" do
+        Bitcoin::Script.from_string(t[0..1].join(" ")).run.should == true
+      end
+    end
+
   end
 
 end
