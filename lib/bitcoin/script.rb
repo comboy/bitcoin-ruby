@@ -331,7 +331,7 @@ class Bitcoin::Script
       else
         case i
         when /OP_PUSHDATA/             # skip
-        when /OP_(.+)$/;               raise ScriptOpcodeError, "#{i} not defined!"
+        when /^OP_(.+)$/;               raise ScriptOpcodeError, "#{i} not defined!"
         when /\(opcode\-(\d+)\)/;      $1.to_i
         when "(opcode";                # skip  # fix invalid opcode parsing
         when /^(\d+)\)/;               $1.to_i # fix invalid opcode parsing
