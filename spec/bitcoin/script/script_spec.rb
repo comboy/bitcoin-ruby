@@ -125,6 +125,12 @@ describe 'Bitcoin::Script' do
       #Script.from_string("100").to_string.should == "100"
 
       proc{ Script.from_string("OP_NOP OP_UNKOWN") }.should.raise(Script::ScriptOpcodeError).message.should == "OP_UNKOWN not defined!"
+      proc{ Script.from_string("OP_PUSHDATAFOO") }.should.raise(Script::ScriptOpcodeError).message.should == "OP_PUSHDATAFOO not defined!"
+
+      # valid pushdata opcodes should not raise
+      Script.from_string("OP_PUSHDATA1")
+      Script.from_string("OP_PUSHDATA2")
+      Script.from_string("OP_PUSHDATA4")
     end
   end
 
